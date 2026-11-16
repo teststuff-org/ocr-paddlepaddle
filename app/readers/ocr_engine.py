@@ -4,7 +4,7 @@ from functools import lru_cache
 import numpy as np
 from paddleocr import PaddleOCR
 
-from app.config import OCR_LANG
+from app.config import OCR_LANG, OCR_USE_MKLDNN
 
 
 @lru_cache(maxsize=1)
@@ -15,6 +15,7 @@ def _get_engine() -> PaddleOCR:
         use_doc_orientation_classify=False,
         use_doc_unwarping=False,
         use_textline_orientation=False,
+        enable_mkldnn=OCR_USE_MKLDNN,
     )
 
 

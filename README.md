@@ -6,6 +6,8 @@ API FastAPI : upload d'un PDF, extraction du texte (couche texte native, sinon O
 - Linux / macOS : `./run.sh`
 - Windows : `.\run.ps1`
 
+Prérequis : Python 3.11+. Les scripts affichent l'URL de l'API (`http://localhost:8000`) et de Swagger (`/docs`).
+
 Les scripts utilisent [uv](https://docs.astral.sh/uv/) (standard moderne) et se rabattent sur `venv` + `pip` si uv est absent.
 
 Documentation interactive : http://localhost:8000/docs

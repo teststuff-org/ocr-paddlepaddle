@@ -1,8 +1,9 @@
-fastapi>=0.115
-uvicorn[standard]>=0.30
-python-multipart>=0.0.9
-pymupdf>=1.24
-paddlepaddle>=3.0
-paddleocr>=3.0
-python-docx>=1.1
-numpy>=1.26
+fastapi==0.163.1
+uvicorn[standard]==0.54.0
+python-multipart==0.0.33
+pymupdf==2.1
+paddlepaddle==3.3.1
+paddleocr==3.7.0
+python-docx==1.2.0
+# numpy 2.3.x est la dernière version compatible avec paddleocr 3.7 (paddlex exige numpy<2.4)
+numpy==2.3.5

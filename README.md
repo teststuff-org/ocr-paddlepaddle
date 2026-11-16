@@ -88,4 +88,20 @@ INFO app.routes.documents: Requete OCR terminee : fichier=mixed.pdf pages=3 form
 Une page scannée prend des dizaines de secondes : les lignes `Page i/n : debut` et
 `Page i/n : OCR en cours` sont là pour distinguer un serveur qui travaille d'un serveur bloqué.
 
+### Lire les journaux
+
+Les journaux vont sur la console **et** dans `logs/ocr-api.log` (rotation à 10 Mo, 5 fichiers).
+Le fichier est le seul endroit fiable : la console n'existe que pour celui qui a lancé le serveur.
+
+```powershell
+Get-Content .\logs\ocr-api.log -Wait -Tail 30    # Windows : suivi en direct
+```
+```bash
+tail -f logs/ocr-api.log                          # Linux / macOS
+```
+
+Au démarrage, la ligne `Journal fichier : <chemin absolu>` donne l'emplacement exact, même si le
+serveur a été lancé depuis un autre dossier. `LOG_FILE` change ce chemin, `LOG_LEVEL=DEBUG` passe
+au détail.
+
 `GET /health` répond `{"status": "ok"}` sans lancer l'OCR ; `GET /` redirige vers `/docs`.

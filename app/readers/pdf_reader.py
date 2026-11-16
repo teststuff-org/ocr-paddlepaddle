@@ -17,43 +17,46 @@ def read_pdf(pdf_bytes: bytes, force_ocr: bool = False) -> Document:
     started = time.perf_counter()
     document = Document()
     with pymupdf.open(stream=pdf_bytes, filetype="pdf") as pdf:
+        total = pdf.page_count
         logger.info(
             "PDF ouvert : pages=%d taille=%d octets force_ocr=%s",
-            pdf.page_count, len(pdf_bytes), force_ocr,
+            total, len(pdf_bytes), force_ocr,
         )
         for number, page in enumerate(pdf, start=1):
-            document.pages.append(read_page(number, page, force_ocr))
+            document.pages.append(read_page(number, page, force_ocr, total))
 
     _log_summary(document, started)
     return document
 
 
-def read_page(number: int, page: pymupdf.Page, force_ocr: bool) -> Page:
+def read_page(number: int, page: pymupdf.Page, force_ocr: bool, total: int) -> Page:
     """Lit une page : texte natif si disponible, sinon OCR."""
     started = time.perf_counter()
+
+    # Debut et fin de page au niveau INFO : une page scannee prend des dizaines de secondes.
+    # Sans ces deux reperes, l'appelant ne sait pas si le serveur travaille ou s'il est bloque.
+    logger.info("Page %d/%d : debut (force_ocr=%s)", number, total, force_ocr)
 
     if not force_ocr:
         lines = _extract_text_layer(page)
         if lines:
-            logger.debug(
-                "Page %d : couche texte, %d ligne(s), %.0f ms",
-                number, len(lines), _elapsed_ms(started),
-            )
+            _log_page_end(number, total, "text_layer", len(lines), started)
             return Page(number=number, lines=lines, source="text_layer")
-        logger.info("Page %d : aucune couche texte, recours a l'OCR", number)
+        logger.info("Page %d/%d : aucune couche texte, recours a l'OCR", number, total)
 
     image = _render_page(page)
+    logger.info(
+        "Page %d/%d : OCR en cours (image %dx%d px, %d dpi)",
+        number, total, image.shape[1], image.shape[0], RENDER_DPI,
+    )
     lines = ocr_image(image)
-    duration_ms = _elapsed_ms(started)
+    _log_page_end(number, total, "ocr", len(lines), started)
+
     if not lines:
         logger.warning(
-            "Page %d : OCR sans aucun texte reconnu apres %.0f ms (scan vide, trop clair ou illisible)",
-            number, duration_ms,
+            "Page %d/%d : OCR sans aucun texte reconnu (scan vide, trop clair ou illisible)",
+            number, total,
         )
-    else:
-        # L'OCR coute des dizaines de secondes par page : sa duree merite le niveau INFO,
-        # contrairement a la couche texte qui se lit en quelques millisecondes.
-        logger.info("Page %d : OCR, %d ligne(s), %.0f ms", number, len(lines), duration_ms)
 
     return Page(number=number, lines=lines, source="ocr")
 
@@ -70,8 +73,11 @@ def _render_page(page: pymupdf.Page) -> np.ndarray:
     return np.ascontiguousarray(rgb[:, :, ::-1])
 
 
-def _elapsed_ms(started: float) -> float:
-    return (time.perf_counter() - started) * 1000
+def _log_page_end(number: int, total: int, source: str, line_count: int, started: float) -> None:
+    logger.info(
+        "Page %d/%d : fin source=%s lignes=%d duree=%.1fs",
+        number, total, source, line_count, time.perf_counter() - started,
+    )
 
 
 def _log_summary(document: Document, started: float) -> None:

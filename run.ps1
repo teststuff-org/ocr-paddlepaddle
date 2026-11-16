@@ -1,5 +1,6 @@
 param(
-    [string]$Command = "start"
+    [string]$Command = "start",
+    [switch]$Reload
 )
 
 $ErrorActionPreference = "Stop"
@@ -10,6 +11,14 @@ Set-Location $PSScriptRoot
 # Pour exposer l'API sur le réseau local : $env:HOST = "0.0.0.0"
 $HostAddress = if ($env:HOST) { $env:HOST } else { "127.0.0.1" }
 $Port = if ($env:PORT) { $env:PORT } else { 8000 }
+
+# Rechargement à chaud DÉSACTIVÉ par défaut. Sous Windows, le reloader d'uvicorn ne peut pas
+# recevoir proprement l'ordre d'arrêt quand la console n'est pas interactive : il se fige après
+# "Reloading..." et laisse un worker orphelin qui garde le port et sert l'ancien code. C'est la
+# cause des incidents "le port répond mais le code n'est pas celui que je viens d'écrire".
+# Pour développer avec rechargement : .\run.ps1 start -Reload   (ou $env:RELOAD = "true")
+$ReloadEnabled = $Reload -or ($env:RELOAD -eq "true")
+$ReloadArgs = if ($ReloadEnabled) { @("--reload") } else { @() }
 
 
 function Test-PortOpen {
@@ -73,6 +82,27 @@ function Get-ServerProcess {
 }
 
 
+function Get-ApiRootProcessId {
+    # Remonte la chaîne des parents tant qu'ils appartiennent à cette API. Tuer le seul processus
+    # qui tient le port laisse en vie le lanceur (`uv run uvicorn`, reloader) : celui-ci peut
+    # relancer un worker qui resservira l'ancien code. On arrête donc la racine de la chaîne.
+    param([int]$ProcessId)
+
+    $CurrentId = $ProcessId
+    for ($Step = 0; $Step -lt 10; $Step++) {
+        $Current = Get-CimInstance Win32_Process -Filter "ProcessId=$CurrentId" -ErrorAction SilentlyContinue
+        if (-not $Current) { break }
+
+        $Parent = Get-CimInstance Win32_Process -Filter "ProcessId=$($Current.ParentProcessId)" -ErrorAction SilentlyContinue
+        if (-not $Parent) { break }
+        if ($Parent.CommandLine -notlike "*uvicorn*" -and $Parent.CommandLine -notlike "*app.main*") { break }
+
+        $CurrentId = [int]$Parent.ProcessId
+    }
+    return $CurrentId
+}
+
+
 function Stop-Server {
     param([int]$TargetPort)
 
@@ -90,8 +120,9 @@ function Stop-Server {
         return 1
     }
 
-    $Tree = Get-ProcessTree -RootId $Server.Id
-    Write-Host "Arret du serveur (PID $($Server.Id), $($Tree.Count) processus)..."
+    $RootId = Get-ApiRootProcessId -ProcessId $Server.Id
+    $Tree = Get-ProcessTree -RootId $RootId
+    Write-Host "Arret du serveur (racine PID $RootId, $($Tree.Count) processus)..."
 
     # Windows n'a pas de SIGTERM pour une application console : on arrete l'arbre du plus
     # profond au plus haut. Les enfants d'abord, sinon un worker survit et garde le port.
@@ -125,18 +156,24 @@ function Start-Server {
     Write-Host "Swagger (UI) : http://localhost:$Port/docs"
     Write-Host "ReDoc        : http://localhost:$Port/redoc"
     Write-Host "Ecoute sur   : $HostAddress`:$Port"
+    if ($ReloadEnabled) {
+        Write-Host "Rechargement : actif (a eviter sous Windows, voir .\run.ps1 stop)" -ForegroundColor Yellow
+    }
+    else {
+        Write-Host "Rechargement : desactive (relancez .\run.ps1 apres une modification du code)"
+    }
 
     if (Get-Command uv -ErrorAction SilentlyContinue) {
         if (-not (Test-Path ".venv")) { uv venv }
         uv pip install -r requirements.txt
-        uv run uvicorn app.main:app --host $HostAddress --port $Port --reload
+        uv run uvicorn app.main:app --host $HostAddress --port $Port @ReloadArgs
     }
     else {
         Write-Host "uv introuvable, utilisation de venv + pip (installer uv : https://docs.astral.sh/uv/)"
         if (-not (Test-Path ".venv")) { python -m venv .venv }
         & .\.venv\Scripts\Activate.ps1
         pip install -r requirements.txt
-        uvicorn app.main:app --host $HostAddress --port $Port --reload
+        uvicorn app.main:app --host $HostAddress --port $Port @ReloadArgs
     }
 }
 
@@ -145,10 +182,11 @@ switch ($Command.ToLower()) {
     "start" { Start-Server }
     "stop" { exit (Stop-Server -TargetPort $Port) }
     default {
-        Write-Host "Usage : .\run.ps1 [start|stop]" -ForegroundColor Yellow
-        Write-Host "  start  demarre l'API (defaut)"
-        Write-Host "  stop   arrete l'arbre de processus qui ecoute sur le port"
-        Write-Host "Variables : `$env:PORT (defaut 8000), `$env:HOST (defaut 127.0.0.1)"
+        Write-Host "Usage : .\run.ps1 [start|stop] [-Reload]" -ForegroundColor Yellow
+        Write-Host "  start    demarre l'API (defaut)"
+        Write-Host "  stop     arrete l'arbre de processus qui ecoute sur le port"
+        Write-Host "  -Reload  rechargement a chaud (deconseille sous Windows : workers figes)"
+        Write-Host "Variables : `$env:PORT (defaut 8000), `$env:HOST (defaut 127.0.0.1), `$env:RELOAD (true|false)"
         exit 2
     }
 }

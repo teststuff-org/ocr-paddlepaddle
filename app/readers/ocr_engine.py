@@ -59,6 +59,12 @@ def _get_engine() -> PaddleOCR:
 def ocr_image(image_bgr: np.ndarray) -> list[str]:
     """Retourne les lignes de texte reconnues dans une image (tableau numpy BGR)."""
     started = time.perf_counter()
+
+    # Une attente du verrou est invisible dans les journaux alors qu'elle peut durer des
+    # dizaines de secondes : sans cette ligne, une requete parait bloquee sans raison.
+    if _ENGINE_LOCK.locked():
+        logger.info("Inference OCR : moteur occupe par une autre requete, attente du verrou")
+
     with _ENGINE_LOCK:
         results = _get_engine().predict(image_bgr)
 
@@ -66,8 +72,9 @@ def ocr_image(image_bgr: np.ndarray) -> list[str]:
     for result in results:
         lines.extend(result["rec_texts"])
 
-    logger.debug(
-        "Inference OCR : image=%dx%d lignes=%d duree=%.0f ms",
-        image_bgr.shape[1], image_bgr.shape[0], len(lines), (time.perf_counter() - started) * 1000,
+    # L'inference est l'etape qui coute le plus : sa duree reste visible au niveau INFO.
+    logger.info(
+        "Inference OCR : image=%dx%d lignes=%d duree=%.1fs",
+        image_bgr.shape[1], image_bgr.shape[0], len(lines), time.perf_counter() - started,
     )
     return lines

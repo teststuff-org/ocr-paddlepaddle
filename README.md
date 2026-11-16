@@ -51,5 +51,8 @@ Paramètres : `format` (`json` | `docx`), `force_ocr` (`true` pour forcer l'OCR 
 Langue OCR : variable d'environnement `OCR_LANG` (défaut `fr`).
 oneDNN : `OCR_USE_MKLDNN=true` pour l'activer ; laissé désactivé car il fait planter PaddlePaddle
 sur CPU Windows (`ConvertPirAttribute2RuntimeAttribute not support`).
+Jeu de modèles : `OCR_MODEL_PROFILE=mobile` pour les modèles mobiles, ~7x plus rapides sur CPU
+(page A4 à 200 dpi : 50 s en `medium`, 7 s en `mobile`), moins sûrs sur les petits caractères.
+Journalisation : `LOG_LEVEL` (`INFO` par défaut, `DEBUG` pour le détail page par page).
 
 `GET /health` répond `{"status": "ok"}` sans lancer l'OCR ; `GET /` redirige vers `/docs`.
